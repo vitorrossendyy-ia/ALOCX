@@ -830,7 +830,6 @@ function enterChat(){
   el('chat-gate').style.display='none';
   el('chat-room').classList.add('on');
   sysMsg('👋 '+name+' entrou no chat');
-  startFakeMsgs();
   el('msg-input').focus();
 }
 
@@ -923,7 +922,6 @@ function renderParticipants(){
 /* fake users */
 const FAKE_USERS=[{name:'Lucas Ferreira',email:'lucas@email.com'},{name:'Ana Paula',email:'ana@email.com'},{name:'Pedro Henrique',email:'pedro@email.com'},{name:'Mariana Costa',email:'mari@email.com'},{name:'João Victor',email:'joao@email.com'},{name:'Fernanda Lima',email:'fer@email.com'},{name:'Rafael Souza',email:'rafa@email.com'},{name:'Camila Rocha',email:'camila@email.com'}];
 const FAKE_MSGS=['Que live incrível! 🔥','Essa estratégia é top demais 💯','Simulei aqui e ficou muito bom!','Quando tem a próxima live? 🚀','Alguém mais usando o simulador? 📈','Muito bom, parabéns pela live!','Esse ponto foi crucial 👏','Anotando tudo aqui ✅','Chegando agora, do que se trata?','Adorei o formato da live!'];
-function startFakeMsgs(){
   FAKE_USERS.slice(0,4).forEach((u,i)=>setTimeout(()=>{const c=getColor(u.name);if(!participants.find(p=>p.email===u.email))participants.push({name:u.name,email:u.email,color:c,joinedAt:new Date(),banned:false});renderParticipants();},i*900));
   fakeTimer=setInterval(()=>{const u=FAKE_USERS[Math.floor(Math.random()*FAKE_USERS.length)];if(participants.find(p=>p.email===u.email&&p.banned))return;const c=getColor(u.name);if(!participants.find(p=>p.email===u.email))participants.push({name:u.name,email:u.email,color:c,joinedAt:new Date(),banned:false});renderParticipants();addMsg(u.name,u.email,FAKE_MSGS[Math.floor(Math.random()*FAKE_MSGS.length)],c,false);},5000+Math.random()*4000);
 }
