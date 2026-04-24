@@ -17,9 +17,12 @@
     html,body { height:100%; background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; overflow-x:hidden; }
 
     /* ══ INTRO ══ */
-    #intro { position:fixed; inset:0; z-index:9999; background:#000; display:flex; align-items:center; justify-content:center; perspective:900px; transition:opacity 1s cubic-bezier(.4,0,.2,1),visibility 1s; }
+    #intro { position:fixed; inset:0; z-index:9999; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; perspective:900px; transition:opacity 1s cubic-bezier(.4,0,.2,1),visibility 1s; }
     #intro.out { opacity:0; visibility:hidden; pointer-events:none; }
-    .logo-box { width:260px; height:260px; border-radius:34px; background:linear-gradient(145deg,#1b1b1b,#0b0b0b); display:flex; justify-content:center; align-items:center; position:relative; box-shadow:0 30px 80px rgba(0,0,0,.95),inset 0 0 18px rgba(255,255,255,.04); opacity:0; transform:scale(.8) rotateX(10deg); animation:entrada 1.6s ease forwards; }
+    .logo-box { width:260px; height:260px; border-radius:34px; background:linear-gradient(145deg,#1b1b1b,#0b0b0b); display:flex; justify-content:center; align-items:center; position:relative; box-shadow:0 30px 80px rgba(0,0,0,.95),inset 0 0 18px rgba(255,255,255,.04); opacity:0; transform:scale(.8) rotateX(10deg); animation:entrada 1.6s ease forwards; cursor:pointer; transition:transform .2s ease, box-shadow .2s ease; }
+    .logo-box:hover { transform:scale(1.04) rotateX(0deg); box-shadow:0 40px 100px rgba(0,0,0,.95),inset 0 0 24px rgba(255,255,255,.07), 0 0 40px rgba(255,255,255,.04); }
+    .logo-box.clicked { animation:logoExit 0.6s cubic-bezier(.4,0,.2,1) forwards; }
+    @keyframes logoExit { 0%{opacity:1;transform:scale(1)} 40%{opacity:1;transform:scale(1.12)} 100%{opacity:0;transform:scale(0.6) rotateX(20deg)} }
     @keyframes entrada { 0%{opacity:0;transform:scale(.75) rotateX(20deg);filter:brightness(.6)} 60%{opacity:1;transform:scale(1.05) rotateX(-5deg);filter:brightness(1.2)} 100%{opacity:1;transform:scale(1) rotateX(0);filter:brightness(1)} }
     .x { width:150px; height:150px; position:relative; }
     .x::before,.x::after { content:""; position:absolute; top:50%; left:50%; width:140px; height:22px; background:linear-gradient(180deg,#fff,#cfcfcf); border-radius:14px; transform-origin:center; box-shadow:0 8px 18px rgba(0,0,0,.45),0 0 12px rgba(255,255,255,.25); }
@@ -27,6 +30,11 @@
     .x::after  { transform:translate(-50%,-50%) rotate(-45deg); }
     .logo-box::after { content:""; position:absolute; inset:-50%; background:radial-gradient(circle,rgba(255,255,255,.14),transparent 60%); animation:introGlow 2.2s ease forwards; pointer-events:none; }
     @keyframes introGlow { 0%{opacity:0;transform:scale(.8)} 40%{opacity:1} 100%{opacity:0;transform:scale(1.25)} }
+    .intro-hint { opacity:0; animation:hintIn .6s ease 2.2s forwards; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    @keyframes hintIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .intro-hint span { font-family:'Syne',sans-serif; font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.35); }
+    .intro-hint-dot { width:4px; height:4px; border-radius:50%; background:rgba(255,255,255,.2); animation:dotPulse 1.4s ease-in-out infinite; }
+    @keyframes dotPulse { 0%,100%{opacity:.2;transform:scale(1)} 50%{opacity:.8;transform:scale(1.4)} }
 
     /* ══ MAIN ══ */
     #main { display:flex; flex-direction:column; min-height:100vh; opacity:0; visibility:hidden; transition:opacity .8s ease .1s,visibility .8s ease .1s; }
@@ -321,7 +329,11 @@
 
 <!-- ══ INTRO ══ -->
 <div id="intro">
-  <div class="logo-box"><div class="x"></div></div>
+  <div class="logo-box" id="intro-logo" onclick="introClick()"><div class="x"></div></div>
+  <div class="intro-hint">
+    <div class="intro-hint-dot"></div>
+    <span>clique para entrar na live</span>
+  </div>
 </div>
 
 <!-- ══ TOAST ══ -->
@@ -569,14 +581,56 @@ const ADMIN_PASSWORD = 'alocx2025';
 
 /* ══ INTRO ══ */
 window.addEventListener('load', () => {
+  simInit();
+  simulateViewers();
+  buildEmojiPicker();
+});
+
+function introClick() {
+  const logo = document.getElementById('intro-logo');
+  logo.classList.add('clicked');
+
+  // Som swoosh profissional
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Swoosh — ruído filtrado descendo de agudo para grave
+    const duration = 1.0;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2200, ctx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.85);
+    filter.Q.value = 1.2;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.13, ctx.currentTime + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
+    noise.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+    noise.start(); noise.stop(ctx.currentTime + 1.0);
+
+    // Tom grave de "chegada"
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(95, ctx.currentTime + 0.45);
+    osc.frequency.exponentialRampToValueAtTime(52, ctx.currentTime + 1.0);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0, ctx.currentTime + 0.45);
+    oscGain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 0.55);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.1);
+    osc.connect(oscGain); oscGain.connect(ctx.destination);
+    osc.start(ctx.currentTime + 0.45); osc.stop(ctx.currentTime + 1.2);
+  } catch(e) {}
+
   setTimeout(() => {
     document.getElementById('intro').classList.add('out');
     document.getElementById('main').classList.add('show');
-    simInit();
-    simulateViewers();
-    buildEmojiPicker();
-  }, 2800);
-});
+  }, 600);
+}
 
 /* ══ VIEWERS — contador real de participantes ══ */
 function simulateViewers() {
