@@ -6,6 +6,7 @@
   <title>ALOCX — Ao Vivo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
@@ -440,13 +441,13 @@
     <!-- LEFT -->
     <div class="left">
       <div class="player-wrap">
-        <iframe src="https://www.youtube.com/embed/live_stream?channel=SEU_CANAL_ID&autoplay=1&mute=1"
+        <iframe src="https://player.vimeo.com/video/76979871?autoplay=1&muted=1&loop=1"
           allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
         </iframe>
       </div>
       <div class="stream-info">
-        <h1>ALOCX — Transmissão Ao Vivo</h1>
-        <p>Ao vivo agora · Use o simulador ao lado e interaja no chat</p>
+        <h1>BRASIL × FRANÇA — Jogo Completo | Amistoso Internacional</h1>
+        <p>ge tv · Use o simulador ao lado e interaja no chat</p>
       </div>
     </div>
 
@@ -577,11 +578,13 @@ window.addEventListener('load', () => {
   }, 2800);
 });
 
-/* ══ VIEWERS ══ */
+/* ══ VIEWERS — contador real de participantes ══ */
 function simulateViewers() {
-  let v = 1247 + Math.floor(Math.random() * 300);
-  document.getElementById('viewer-num').textContent = v.toLocaleString('pt-BR');
-  setInterval(() => { v += Math.floor(Math.random()*7)-3; if(v<800)v=800; document.getElementById('viewer-num').textContent=v.toLocaleString('pt-BR'); }, 4000);
+  updateViewerCount();
+}
+function updateViewerCount() {
+  const count = participants.length;
+  document.getElementById('viewer-num').textContent = count.toLocaleString('pt-BR');
 }
 
 /* ══ PANEL SWITCH ══ */
@@ -726,8 +729,10 @@ function renderAdminMsgs() {
 function deleteMsg(id) {
   const idx = allMessages.findIndex(m=>m.id===id);
   if (idx>-1) allMessages.splice(idx,1);
-  const el = document.getElementById('msg-'+id);
-  if (el) el.remove();
+  const msgEl = document.getElementById('msg-'+id);
+  if (msgEl) msgEl.remove();
+  const alogEl = document.getElementById('alog-'+id);
+  if (alogEl) alogEl.remove();
   renderAdminMsgs();
   document.getElementById('a-msgs-count').textContent = allMessages.length;
   showToast('🗑️ Mensagem deletada.');
@@ -798,10 +803,17 @@ function simCalc(){
 }
 
 /* ══════════════════════════════════════
-   CHAT ENGINE
+   SUPABASE CONFIG
+══════════════════════════════════════ */
+const SUPABASE_URL = 'https://qaruutzropuesvplobuk.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vZoc3eDdh2NtcIoJRCbPgw_vxOTk5Tm';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ══════════════════════════════════════
+   CHAT ENGINE — TEMPO REAL
 ══════════════════════════════════════ */
 const COLORS=['#f59e0b','#10b981','#3b82f6','#a855f7','#ec4899','#14b8a6','#f97316','#84cc16','#06b6d4','#e11d48'];
-let myUser=null, fakeTimer=null, msgIdCounter=0;
+let myUser=null, msgIdCounter=0, realtimeSub=null;
 const userColors={};
 const participants=[];
 const allMessages=[];
@@ -811,8 +823,47 @@ const initials=n=>n.trim().split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpp
 const nowTime=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+/* ── carregar mensagens históricas ── */
+async function loadMessages(){
+  const {data,error}=await sb.from('messages').select('*').order('created_at',{ascending:true}).limit(100);
+  if(error){console.error('Erro ao carregar mensagens:',error);return;}
+  data.forEach(m=>{
+    const mine=myUser&&m.email===myUser.email;
+    renderMsg(m.id,m.name,m.email,m.content,m.color||getColor(m.name),mine);
+    allMessages.push({id:m.id,name:m.name,email:m.email,text:m.content,color:m.color||getColor(m.name),time:nowTime()});
+    if(!participants.find(p=>p.email===m.email))
+      participants.push({name:m.name,email:m.email,color:m.color||getColor(m.name),joinedAt:new Date(m.created_at),banned:false});
+  });
+  renderParticipants();
+}
+
+/* ── inscrever no realtime ── */
+function subscribeRealtime(){
+  realtimeSub=sb.channel('public:messages')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
+      const m=payload.new;
+      const mine=myUser&&m.email===myUser.email;
+      if(allMessages.find(x=>x.id===m.id))return; // já renderizado
+      renderMsg(m.id,m.name,m.email,m.content,m.color||getColor(m.name),mine);
+      allMessages.push({id:m.id,name:m.name,email:m.email,text:m.content,color:m.color||getColor(m.name),time:nowTime()});
+      if(!participants.find(p=>p.email===m.email))
+        participants.push({name:m.name,email:m.email,color:m.color||getColor(m.name),joinedAt:new Date(),banned:false});
+      renderParticipants();
+      if(el('panel-chat').style.display==='none'&&!mine)el('chat-notif').classList.add('show');
+      if(adminLogged&&document.getElementById('admin-overlay').classList.contains('open'))refreshAdminData();
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'messages'},payload=>{
+      const id=payload.old.id;
+      const idx=allMessages.findIndex(m=>m.id===id);
+      if(idx>-1)allMessages.splice(idx,1);
+      const msgEl=document.getElementById('msg-'+id);
+      if(msgEl)msgEl.remove();
+    })
+    .subscribe();
+}
+
 /* gate */
-function enterChat(){
+async function enterChat(){
   const name=el('gate-name').value.trim(), email=el('gate-email').value.trim();
   let ok=true;
   if(!name){el('gate-name').classList.add('error');el('err-name').classList.add('show');ok=false;}else{el('gate-name').classList.remove('error');el('err-name').classList.remove('show');}
@@ -829,56 +880,76 @@ function enterChat(){
   el('my-username').textContent=name;
   el('chat-gate').style.display='none';
   el('chat-room').classList.add('on');
-  sysMsg('👋 '+name+' entrou no chat');
-  startFakeMsgs();
+  el('messages').innerHTML='';
+  allMessages.length=0;
+  await loadMessages();
+  subscribeRealtime();
+  sysMsg('👋 Bem-vindo, '+name+'!');
   el('msg-input').focus();
 }
 
 function logout(){
+  if(realtimeSub){sb.removeChannel(realtimeSub);realtimeSub=null;}
+  if(myUser){
+    const p=participants.find(x=>x.email===myUser.email);
+    if(p&&!p.banned)participants.splice(participants.indexOf(p),1);
+  }
   myUser=null;
   el('chat-gate').style.display='flex';
   el('chat-room').classList.remove('on');
   el('gate-name').value='';
   el('gate-email').value='';
   el('messages').innerHTML='';
-  stopFakeMsgs();
+  updateViewerCount();
+  el('part-count').textContent=participants.filter(p=>!p.banned).length;
 }
 
 /* send */
-function sendMsg(){
+async function sendMsg(){
   if(!myUser)return;
   if(participants.find(p=>p.email===myUser.email&&p.banned)){showToast('⛔ Você foi banido deste chat.');logout();return;}
   const inp=el('msg-input');const txt=inp.value.trim();if(!txt)return;
-  addMsg(myUser.name,myUser.email,txt,myUser.color,true);
   inp.value='';inp.style.height='';inp.focus();
+  const {error}=await sb.from('messages').insert({name:myUser.name,email:myUser.email,content:txt,color:myUser.color});
+  if(error){showToast('❌ Erro ao enviar mensagem.');console.error(error);}
 }
 
 function autoResize(ta){ta.style.height='';ta.style.height=Math.min(ta.scrollHeight,80)+'px';}
 
-/* add message */
-function addMsg(name,email,text,color,mine=false){
+/* render message DOM */
+function renderMsg(id,name,email,text,color,mine){
   const box=el('messages');
-  const id='msg-'+(++msgIdCounter);
-  allMessages.push({id,name,email,text,color,time:nowTime()});
   const div=document.createElement('div');
   div.className='msg'+(mine?' mine':'');
-  div.id=id;
+  div.id='msg-'+id;
   div.innerHTML=`
     <div class="msg-av" style="background:${color}">${initials(name)}</div>
     <div class="msg-body">
       <div class="msg-top"><span class="msg-name" style="color:${color}">${esc(name)}</span><span class="msg-time">${nowTime()}</span></div>
       <div class="msg-text">${esc(text)}</div>
-      <div class="msg-reactions" id="reacts-${id}"></div>
+      <div class="msg-reactions" id="reacts-msg-${id}"></div>
     </div>
-    <button class="msg-react-btn" onclick="openReactPicker('${id}',this)">😄</button>
-    <div class="react-picker" id="rpick-${id}"></div>`;
+    <button class="msg-react-btn" onclick="openReactPicker('msg-${id}',this)">😄</button>
+    <div class="react-picker" id="rpick-msg-${id}"></div>`;
   box.appendChild(div);
   box.scrollTop=box.scrollHeight;
-  if(el('panel-chat').style.display==='none'&&!mine)el('chat-notif').classList.add('show');
-  if(adminLogged&&document.getElementById('admin-overlay').classList.contains('open'))refreshAdminData();
 }
 
 function sysMsg(txt){const box=el('messages');const d=document.createElement('div');d.className='msg-sys';d.textContent=txt;box.appendChild(d);box.scrollTop=box.scrollHeight;}
+
+/* delete (admin) */
+async function deleteMsg(id){
+  const idx=allMessages.findIndex(m=>m.id===id);
+  if(idx>-1)allMessages.splice(idx,1);
+  const msgEl=document.getElementById('msg-'+id);
+  if(msgEl)msgEl.remove();
+  const alogEl=document.getElementById('alog-'+id);
+  if(alogEl)alogEl.remove();
+  await sb.from('messages').delete().eq('id',id);
+  renderAdminMsgs();
+  document.getElementById('a-msgs-count').textContent=allMessages.length;
+  showToast('🗑️ Mensagem deletada.');
+}
 
 /* reactions */
 const REACT_EMOJIS=['👍','❤️','🔥','😂','😮','👏','💯','🚀'];
@@ -917,17 +988,13 @@ function toggleEmojiPicker(){
 
 /* participants */
 function renderParticipants(){
-  el('part-count').textContent=participants.length;
+  const count=participants.filter(p=>!p.banned).length;
+  el('part-count').textContent=count;
+  updateViewerCount();
 }
 
-/* fake users */
-const FAKE_USERS=[{name:'Lucas Ferreira',email:'lucas@email.com'},{name:'Ana Paula',email:'ana@email.com'},{name:'Pedro Henrique',email:'pedro@email.com'},{name:'Mariana Costa',email:'mari@email.com'},{name:'João Victor',email:'joao@email.com'},{name:'Fernanda Lima',email:'fer@email.com'},{name:'Rafael Souza',email:'rafa@email.com'},{name:'Camila Rocha',email:'camila@email.com'}];
-const FAKE_MSGS=['Que live incrível! 🔥','Essa estratégia é top demais 💯','Simulei aqui e ficou muito bom!','Quando tem a próxima live? 🚀','Alguém mais usando o simulador? 📈','Muito bom, parabéns pela live!','Esse ponto foi crucial 👏','Anotando tudo aqui ✅','Chegando agora, do que se trata?','Adorei o formato da live!'];
-function startFakeMsgs(){
-  FAKE_USERS.slice(0,4).forEach((u,i)=>setTimeout(()=>{const c=getColor(u.name);if(!participants.find(p=>p.email===u.email))participants.push({name:u.name,email:u.email,color:c,joinedAt:new Date(),banned:false});renderParticipants();},i*900));
-  fakeTimer=setInterval(()=>{const u=FAKE_USERS[Math.floor(Math.random()*FAKE_USERS.length)];if(participants.find(p=>p.email===u.email&&p.banned))return;const c=getColor(u.name);if(!participants.find(p=>p.email===u.email))participants.push({name:u.name,email:u.email,color:c,joinedAt:new Date(),banned:false});renderParticipants();addMsg(u.name,u.email,FAKE_MSGS[Math.floor(Math.random()*FAKE_MSGS.length)],c,false);},5000+Math.random()*4000);
-}
-function stopFakeMsgs(){clearInterval(fakeTimer);}
+function startFakeMsgs(){}
+function stopFakeMsgs(){}
 </script>
 </body>
 </html>
