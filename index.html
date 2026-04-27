@@ -632,13 +632,52 @@ function introClick() {
   }, 600);
 }
 
-/* ══ VIEWERS — contador real de participantes ══ */
-function simulateViewers() {
-  updateViewerCount();
+/* ══ VIEWERS — contador real de pessoas no site ══ */
+const SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let viewerInterval = null;
+
+async function simulateViewers() {
+  // Registra esta sessão no Supabase
+  await sb.from('online_users').upsert({ session_id: SESSION_ID, last_seen: new Date().toISOString() });
+
+  // Atualiza o contador ao entrar
+  await updateViewerCount();
+
+  // Mantém a sessão viva a cada 20s
+  viewerInterval = setInterval(async () => {
+    await sb.from('online_users').upsert({ session_id: SESSION_ID, last_seen: new Date().toISOString() });
+    await updateViewerCount();
+  }, 20000);
+
+  // Remove sessões inativas (mais de 40s sem ping) a cada 30s
+  setInterval(async () => {
+    const cutoff = new Date(Date.now() - 40000).toISOString();
+    await sb.from('online_users').delete().lt('last_seen', cutoff);
+    await updateViewerCount();
+  }, 30000);
+
+  // Remove sessão ao fechar a aba
+  window.addEventListener('beforeunload', () => {
+    navigator.sendBeacon
+      ? navigator.sendBeacon('/') // fallback
+      : null;
+    sb.from('online_users').delete().eq('session_id', SESSION_ID);
+  });
+
+  // Escuta mudanças em tempo real
+  sb.channel('online_users_count')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'online_users' }, async () => {
+      await updateViewerCount();
+    })
+    .subscribe();
 }
-function updateViewerCount() {
-  const count = participants.length;
-  document.getElementById('viewer-num').textContent = count.toLocaleString('pt-BR');
+
+async function updateViewerCount() {
+  const cutoff = new Date(Date.now() - 40000).toISOString();
+  const { count } = await sb.from('online_users').select('*', { count: 'exact', head: true }).gte('last_seen', cutoff);
+  if (count !== null) {
+    document.getElementById('viewer-num').textContent = count.toLocaleString('pt-BR');
+  }
 }
 
 /* ══ PANEL SWITCH ══ */
