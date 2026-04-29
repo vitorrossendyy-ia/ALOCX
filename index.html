@@ -669,9 +669,7 @@ async function simulateViewers() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'online_users' }, async () => {
       await updateViewerCount();
     })
-    .subscribe((status, err) => {
-      console.log('Realtime status:', status, err || '');
-    });
+    .subscribe();
 }
 
 async function updateViewerCount() {
@@ -937,10 +935,8 @@ async function loadMessages(){
 
 /* ── inscrever no realtime ── */
 function subscribeRealtime(){
-  console.log('Conectando ao Realtime...');
   realtimeSub=sb.channel('public:messages')
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
-      console.log('Nova mensagem recebida!', payload);
       const m=payload.new;
       const mine=myUser&&m.email===myUser.email;
       if(allMessages.find(x=>x.id===m.id))return; // já renderizado
@@ -959,9 +955,7 @@ function subscribeRealtime(){
       const msgEl=document.getElementById('msg-'+id);
       if(msgEl)msgEl.remove();
     })
-    .subscribe((status, err) => {
-      console.log('Realtime status:', status, err || '');
-    });
+    .subscribe();
 }
 
 /* gate */
