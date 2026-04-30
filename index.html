@@ -935,27 +935,36 @@ async function loadMessages(){
 
 /* ── inscrever no realtime ── */
 function subscribeRealtime(){
-  realtimeSub=sb.channel('public:messages')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
-      const m=payload.new;
-      const mine=myUser&&m.email===myUser.email;
-      if(allMessages.find(x=>x.id===m.id))return; // já renderizado
-      renderMsg(m.id,m.name,m.email,m.content,m.color||getColor(m.name),mine);
-      allMessages.push({id:m.id,name:m.name,email:m.email,text:m.content,color:m.color||getColor(m.name),time:nowTime()});
-      if(!participants.find(p=>p.email===m.email))
-        participants.push({name:m.name,email:m.email,color:m.color||getColor(m.name),joinedAt:new Date(),banned:false});
-      renderParticipants();
-      if(el('panel-chat').style.display==='none'&&!mine)el('chat-notif').classList.add('show');
-      if(adminLogged&&document.getElementById('admin-overlay').classList.contains('open'))refreshAdminData();
-    })
-    .on('postgres_changes',{event:'DELETE',schema:'public',table:'messages'},payload=>{
-      const id=payload.old.id;
-      const idx=allMessages.findIndex(m=>m.id===id);
-      if(idx>-1)allMessages.splice(idx,1);
-      const msgEl=document.getElementById('msg-'+id);
-      if(msgEl)msgEl.remove();
-    })
-    .subscribe();
+  if(realtimeSub){ sb.removeChannel(realtimeSub); realtimeSub=null; }
+
+  realtimeSub = sb.channel('chat-messages-' + Date.now(), {
+    config: { broadcast: { self: false } }
+  })
+  .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, payload=>{
+    const m = payload.new;
+    const mine = myUser && m.email === myUser.email;
+    if(allMessages.find(x=>x.id===m.id)) return;
+    renderMsg(m.id, m.name, m.email, m.content, m.color||getColor(m.name), mine);
+    allMessages.push({id:m.id, name:m.name, email:m.email, text:m.content, color:m.color||getColor(m.name), time:nowTime()});
+    if(!participants.find(p=>p.email===m.email))
+      participants.push({name:m.name, email:m.email, color:m.color||getColor(m.name), joinedAt:new Date(), banned:false});
+    renderParticipants();
+    if(el('panel-chat').style.display==='none' && !mine) el('chat-notif').classList.add('show');
+    if(adminLogged && document.getElementById('admin-overlay').classList.contains('open')) refreshAdminData();
+  })
+  .on('postgres_changes', {event:'DELETE', schema:'public', table:'messages'}, payload=>{
+    const id = payload.old.id;
+    const idx = allMessages.findIndex(m=>m.id===id);
+    if(idx>-1) allMessages.splice(idx,1);
+    const msgEl = document.getElementById('msg-'+id);
+    if(msgEl) msgEl.remove();
+  })
+  .subscribe((status, err) => {
+    if(status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+      // Reconecta automaticamente após 3s
+      setTimeout(() => { if(myUser) subscribeRealtime(); }, 3000);
+    }
+  });
 }
 
 /* gate */
